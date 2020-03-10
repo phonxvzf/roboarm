@@ -1,5 +1,5 @@
 roboarm: roboarm.c
-	cc -ggdb -rdynamic -o roboarm roboarm.c -lSDL2 -lSDL2_image
+	cc -ggdb -rdynamic -o roboarm roboarm.c -lm -lSDL2 -lSDL2_image
 
 clean:
 	rm roboarm
