@@ -17,4 +17,8 @@ $ make
 $ ./roboarm
 ```
 
-Move cursor to interact with the arm and press `q` to quit the program.
+## Instructions
+- Move cursor and click to mark target
+- Press `SPACE` to start animation
+- Press `R` to reset
+- Press `Q` to quit

@@ -6,9 +6,14 @@
 
 #define ARM_WIDTH   10
 #define ARM_LENGTH  283
+#define ANIM_SPEED  200 // pixels per sec
 
 SDL_Window* window;
 SDL_Renderer* renderer;
+
+typedef struct {
+  double x, y;
+} Point2f;
 
 void clean_after_init() {
   SDL_DestroyRenderer(renderer);
@@ -17,11 +22,19 @@ void clean_after_init() {
 }
 
 double rad_to_deg(double rad) {
-  return 180.f / M_PI * rad;
+  return 180 / M_PI * rad;
 }
 
 double pow2(double x) {
   return x * x;
+}
+
+double distance(Point2f* a, Point2f* b) {
+  return sqrt(pow2(a->x - b->x) + pow2(a->y - b->y));
+}
+
+double distance2(Point2f* a, Point2f* b) {
+  return pow2(a->x - b->x) + pow2(a->y - b->y);
 }
 
 void draw_arm(SDL_Texture* texture, double rad, int pivot_x, int pivot_y) {
@@ -41,7 +54,7 @@ SDL_Point pivot_position(double rad0, SDL_Point* p0) {
   return ret;
 }
 
-void solve_ik(double* angle0, double* angle1, SDL_Point* p0, SDL_Point* target) {
+void solve_ik(double* angle0, double* angle1, SDL_Point* p0, Point2f* target) {
   double dist2 = pow2(target->x - p0->x) + pow2(target->y - p0->y);
   double beta = acos((dist2 - 2 * pow2(ARM_LENGTH)) / (-2 * pow2(ARM_LENGTH)));
   double a = (M_PI - beta) / 2;
@@ -77,6 +90,14 @@ int main() {
     return 1;
   }
 
+  SDL_Surface* cross_surface = IMG_Load("cross.png");
+  if (cross_surface == NULL) {
+    fprintf(stderr, "error: could not load cross.png: %s\n", IMG_GetError());
+    SDL_FreeSurface(pixel_surface);
+    clean_after_init();
+    return 1;
+  }
+
   SDL_Texture* arm_texture[2];
   arm_texture[0] = SDL_CreateTextureFromSurface(renderer, pixel_surface);
 
@@ -85,13 +106,30 @@ int main() {
 
   SDL_FreeSurface(pixel_surface);
 
+  SDL_Texture* cross_texture = SDL_CreateTextureFromSurface(renderer, cross_surface);
+
   uint8_t running = true;
+  uint8_t animating = false;
+  uint8_t recv_mouse = true;
   SDL_Event e;
   SDL_Point mouse;
   SDL_Point pivot0, pivot1;
   pivot0.x = 400; pivot0.y = 400;
 
+  Point2f keys[32];
+  Point2f current_target;
+  int n_keys = 0;
+  int current_key = 0;
+  double dt;
+
+  uint32_t tick = SDL_GetTicks();
+
   while (running) {
+    tick = SDL_GetTicks();
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0xff);
+    SDL_RenderClear(renderer);
+
     while (SDL_PollEvent(&e)) {
       switch (e.type) {
         case SDL_QUIT:
@@ -99,29 +137,78 @@ int main() {
           break;
         case SDL_KEYDOWN:
           if (e.key.keysym.sym == SDLK_q) running = false;
+          if (e.key.keysym.sym == SDLK_r) {
+            recv_mouse = true;
+            animating = false;
+            n_keys = 0;
+          }
+          if (e.key.keysym.sym == SDLK_SPACE) {
+            if (n_keys > 0) {
+              animating = true;
+              recv_mouse = false;
+              current_key = 0;
+              current_target.x = keys[0].x;
+              current_target.y = keys[0].y;
+            }
+          }
           break;
         case SDL_MOUSEMOTION:
           mouse.x = e.motion.x;
           mouse.y = e.motion.y;
           break;
+        case SDL_MOUSEBUTTONDOWN:
+          if (n_keys < 32) {
+            int mx, my;
+            SDL_GetMouseState(&mx, &my);
+            keys[n_keys].x = mx;
+            keys[n_keys].y = my;
+            ++n_keys;
+          }
+          break;
       }
     }
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0xff);
-    SDL_RenderClear(renderer);
+    if (animating) {
+      if (current_key + 1 < n_keys) {
+        double move_dist =
+          (ANIM_SPEED + 0.5 * distance(&keys[current_key], &keys[current_key+1])) * dt;
+        double dir_x = (keys[current_key + 1].x - keys[current_key].x);
+        double dir_y = (keys[current_key + 1].y - keys[current_key].y);
+        double theta = atan2(dir_y, dir_x);
+        current_target.x += move_dist * cos(theta);
+        current_target.y += move_dist * sin(theta);
+        if (distance2(&current_target, &keys[current_key + 1]) < 64) ++current_key;
+      } else {
+        animating = false;
+        recv_mouse = false;
+      }
+    }
+
+    Point2f target;
+    target.x = recv_mouse ? mouse.x : current_target.x;
+    target.y = recv_mouse ? mouse.y : current_target.y;
 
     double angle0, angle1;
-    solve_ik(&angle0, &angle1, &pivot0, &mouse);
+    solve_ik(&angle0, &angle1, &pivot0, &target);
     draw_arm(arm_texture[0], angle0, pivot0.x, pivot0.y);
 
     pivot1 = pivot_position(angle0, &pivot0);
     draw_arm(arm_texture[1], angle1, pivot1.x, pivot1.y);
 
+    SDL_Rect cross_rect;
+    cross_rect.w = 16; cross_rect.h = 16;
+    for (int i = 0; i < n_keys; ++i) {
+      cross_rect.x = keys[i].x - 8; cross_rect.y = keys[i].y - 8;
+      SDL_RenderCopy(renderer, cross_texture, NULL, &cross_rect);
+    }
+
     SDL_RenderPresent(renderer);
+    dt = (SDL_GetTicks() - tick) * 0.001f;
   }
 
   SDL_DestroyTexture(arm_texture[0]);
   SDL_DestroyTexture(arm_texture[1]);
+  SDL_DestroyTexture(cross_texture);
 
   clean_after_init();
   return 0;
