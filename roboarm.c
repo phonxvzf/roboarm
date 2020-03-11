@@ -121,6 +121,7 @@ int main() {
   int n_keys = 0;
   int current_key = 0;
   double dt;
+  double anim_dist;
 
   uint32_t tick = SDL_GetTicks();
 
@@ -149,6 +150,7 @@ int main() {
               current_key = 0;
               current_target.x = keys[0].x;
               current_target.y = keys[0].y;
+              anim_dist = 0;
             }
           }
           break;
@@ -177,7 +179,11 @@ int main() {
         double theta = atan2(dir_y, dir_x);
         current_target.x += move_dist * cos(theta);
         current_target.y += move_dist * sin(theta);
-        if (distance2(&current_target, &keys[current_key + 1]) < 64) ++current_key;
+        anim_dist += move_dist;
+        if (pow2(anim_dist) >= distance2(&keys[current_key], &keys[current_key+1])) {
+          anim_dist = 0;
+          ++current_key;
+        }
       } else {
         animating = false;
         recv_mouse = false;
